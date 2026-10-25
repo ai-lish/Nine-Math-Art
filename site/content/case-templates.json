@@ -1,0 +1,10 @@
+[
+  {"id":"case-01","type":"compare","techniqueIds":["fangtian","guitian"],"speaker":"某甲（虛構人物）","statement":"兩塊田的面積不同，請核算後指出較大的一塊。","reviewed":false},
+  {"id":"case-02","type":"rent","techniqueIds":["fangtian","litian"],"speaker":"某乙（虛構人物）","statement":"請把田面積換算成畝，核對官府租額。","parameterRanges":{"rentPerMu":{"minimum":2,"maximum":6}},"reviewed":false},
+  {"id":"case-03","type":"price","techniqueIds":["fangtian","guitian"],"speaker":"某丙（虛構人物）","statement":"按每畝價額計算，請核算這塊田的價額。","parameterRanges":{"pricePerMu":{"minimum":3,"maximum":10}},"reviewed":false},
+  {"id":"case-04","type":"divide","techniqueIds":["fangtian","jitian"],"speaker":"某丁（虛構人物）","statement":"二人共得一塊田，請算出均分後每人所得。","reviewed":false},
+  {"id":"case-05","type":"audit","techniqueIds":["fangtian","xietian"],"speaker":"某戊（虛構人物）","statement":"新丈田的數值與舊冊不同，請核對相差多少。","parameterRanges":{"oldRecordSquareBu":{"minimum":40,"maximum":539}},"reviewed":false},
+  {"id":"case-06","type":"compare","techniqueIds":["litian","xietian"],"speaker":"某己（虛構人物）","statement":"請比較兩塊田的面積，指出較大的一塊。","reviewed":false},
+  {"id":"case-07","type":"price","techniqueIds":["litian","jitian"],"speaker":"某庚（虛構人物）","statement":"買田按畝計價，請核算應付價額。","parameterRanges":{"pricePerMu":{"minimum":3,"maximum":10}},"reviewed":false},
+  {"id":"case-08","type":"rent","techniqueIds":["guitian","jitian"],"speaker":"某辛（虛構人物）","statement":"請核對田地換算成畝後的租額。","parameterRanges":{"rentPerMu":{"minimum":2,"maximum":6}},"reviewed":false}
+]

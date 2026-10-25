@@ -1,0 +1,12 @@
+[
+  {"id":"book-01","number":1,"techniqueId":"fangtian","kind":"book","parameters":{"width":"15","length":"16"},"expectedSquareBu":"240","displayAnswer":"1 畝","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-02","number":2,"techniqueId":"fangtian","kind":"book","parameters":{"width":"12","length":"14"},"expectedSquareBu":"168","displayAnswer":"168 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-03","number":3,"techniqueId":"litian","kind":"book","parameters":{"width":"1","length":"1"},"expectedSquareBu":"90000","displayAnswer":"375 畝","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-04","number":4,"techniqueId":"litian","kind":"book","parameters":{"width":"2","length":"3"},"expectedSquareBu":"540000","displayAnswer":"2,250 畝","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-25","number":25,"techniqueId":"guitian","kind":"book","parameters":{"width":"12","height":"21"},"expectedSquareBu":"126","displayAnswer":"126 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-26","number":26,"techniqueId":"guitian","kind":"book","parameters":{"width":"11/2","height":"26/3"},"expectedSquareBu":"143/6","displayAnswer":"23 又 5/6 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-27","number":27,"techniqueId":"xietian","kind":"book","parameters":{"endA":"30","endB":"42","height":"64"},"expectedSquareBu":"2304","displayAnswer":"9 畝 144 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-28","number":28,"techniqueId":"xietian","kind":"book","parameters":{"endA":"100","endB":"72","height":"65"},"presentation":"height-first","expectedSquareBu":"5590","displayAnswer":"23 畝 70 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-29","number":29,"techniqueId":"jitian","kind":"book","parameters":{"tongue":"20","heel":"5","height":"30"},"expectedSquareBu":"375","displayAnswer":"1 畝 135 步","source":"《九章算術》卷第一・方田（版本待教師核對）"},
+  {"id":"book-30","number":30,"techniqueId":"jitian","kind":"book","parameters":{"tongue":"117","heel":"50","height":"135"},"expectedSquareBu":"22545/2","displayAnswer":"46 畝 232 又 1/2 步","source":"《九章算術》卷第一・方田（版本待教師核對）"}
+]

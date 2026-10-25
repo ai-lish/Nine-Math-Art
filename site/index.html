@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-Hant-HK">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="color-scheme" content="light dark">
+    <meta name="description" content="《九章算術》歷史數學遊戲試玩版">
+    <meta name="robots" content="noindex,nofollow">
+    <title>長安倉曹見習錄</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">跳至主要內容</a>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <div class="brand-mark" aria-hidden="true">簡</div>
+          <div>
+            <p class="eyebrow">試玩版 0.1.0</p>
+            <h1>長安倉曹見習錄</h1>
+          </div>
+        </div>
+        <div class="top-actions">
+          <span class="text-status">文字校對中</span>
+          <button class="icon-button" type="button" id="theme-toggle" aria-label="切換明暗模式" title="切換明暗模式">◐</button>
+          <button class="quiet-button" type="button" id="export-save">匯出進度</button>
+          <label class="quiet-button file-button" for="import-save">匯入進度</label>
+          <input id="import-save" class="visually-hidden" type="file" accept="application/json,.json">
+        </div>
+      </header>
+
+      <p class="校對告示">古籍文字只供試玩展示，仍待教師對照底本核定。</p>
+
+      <nav class="main-nav" aria-label="主要功能">
+        <button type="button" data-view="home" aria-current="page">官日與地圖</button>
+        <button type="button" data-view="morning">日課進修</button>
+        <button type="button" data-view="field">丈田任務</button>
+        <button type="button" data-view="evening">民訟</button>
+        <button type="button" data-view="catalog">圖鑑</button>
+      </nav>
+
+      <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+      <main id="main" tabindex="-1"></main>
+      <footer class="site-footer">
+        <span>本機進度只存於此瀏覽器；匯出檔可作備份。</span>
+        <span id="storage-status"></span>
+      </footer>
+    </div>
+  </body>
+</html>

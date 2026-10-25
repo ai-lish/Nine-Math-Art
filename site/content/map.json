@@ -1,0 +1,24 @@
+{
+  "locations": [
+    {
+      "id": "county-office",
+      "name": "縣衙",
+      "unlock": { "type": "always" },
+      "activityIds": ["morning", "evening"]
+    },
+    {
+      "id": "field",
+      "name": "田野",
+      "unlock": { "type": "completed-first-morning" },
+      "activityIds": ["noon"]
+    }
+  ],
+  "fieldTypes": [
+    { "techniqueId": "fangtian", "requiresLearned": ["fangtian"] },
+    { "techniqueId": "litian", "requiresLearned": ["litian"] },
+    { "techniqueId": "guitian", "requiresLearned": ["guitian"] },
+    { "techniqueId": "xietian", "requiresLearned": ["xietian"] },
+    { "techniqueId": "jitian", "requiresLearned": ["jitian"] }
+  ],
+  "expansionSlots": { "locations": [], "regions": [] }
+}
