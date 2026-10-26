@@ -76,9 +76,27 @@ export function formatRational(value) {
   return `${whole} 又 ${absoluteRemainder}/${value.d}`;
 }
 
+export const TECHNIQUE_PARAMETER_KEYS = {
+  fangtian: ["width", "length"],
+  litian: ["width", "length"],
+  guitian: ["width", "height"],
+  xietian: ["endA", "endB", "height"],
+  jitian: ["tongue", "heel", "height"],
+};
+
+export function hasValidParameters(techniqueId, parameters) {
+  const keys = TECHNIQUE_PARAMETER_KEYS[techniqueId];
+  if (!keys || !parameters || typeof parameters !== "object" || Array.isArray(parameters)) return false;
+  return keys.every((key) => {
+    if (typeof parameters[key] !== "string" || parameters[key].length > 32) return false;
+    const value = parseRational(parameters[key]);
+    return Boolean(value && value.n > 0n);
+  });
+}
+
 export function calculateArea(techniqueId, parameters) {
-  const p = Object.fromEntries(Object.entries(parameters).map(([key, value]) => [key, parseRational(value)]));
-  if (Object.values(p).some((value) => !value)) return null;
+  if (!hasValidParameters(techniqueId, parameters)) return null;
+  const p = Object.fromEntries(TECHNIQUE_PARAMETER_KEYS[techniqueId].map((key) => [key, parseRational(parameters[key])]));
   if (techniqueId === "fangtian") return multiply(p.width, p.length);
   if (techniqueId === "litian") {
     const mu = multiply(multiply(p.width, p.length), rational(375n));

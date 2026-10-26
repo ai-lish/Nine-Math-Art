@@ -2,10 +2,8 @@ import { CONFIG, SEGMENT_IDS, SEGMENT_LABELS, TECHNIQUE_IDS } from "./config.js"
 import {
   calculateArea,
   compare,
-  formatRational,
   parseAreaAnswer,
   parseRational,
-  rational,
   rationalString,
   sameValue,
 } from "./math.js";
@@ -18,19 +16,22 @@ import {
   questionLabel,
 } from "./game.js";
 import {
+  advanceDay,
   completeSegment,
   completeWork,
-  createDefaultSave,
   decodeSave,
   encodeSave,
+  isDayComplete,
   isWorkComplete,
   loadSave,
+  markReviewAdjustment,
   markSeal,
   mergeSaves,
   recordCaseResolution,
   recordPlot,
   recordStars,
   scheduleReview,
+  settleReviewSession,
   storeSave,
 } from "./state.js";
 
@@ -51,7 +52,6 @@ let persistent = loaded.persistent && storeSave(save);
 let activeView = "home";
 let noticeTimer = 0;
 const redoIds = new Set();
-const hintDepth = new Map();
 const feedbackPhrases = ["有些偏差，請再核對尺寸。", "再量一次試試。", "請核對所用的單位與尺寸。"];
 
 function el(tag, options = {}, children = []) {
@@ -121,6 +121,20 @@ function segmentButton(segmentId) {
   return button(segmentId === "morning" ? "進入晨課" : segmentId === "noon" ? "前往丈田" : "進入民訟", () => selectView(segmentId === "morning" ? "morning" : segmentId === "noon" ? "field" : "evening"), "primary-button");
 }
 
+function renderDayCompleteCard() {
+  if (!isDayComplete(save)) return null;
+  return el("section", { className: "notice day-transition" }, [
+    el("h3", { text: `第 ${save.day} 官日三段已完成` }),
+    el("p", { text: "可先重溫本日任何一段；準備好後再進入下一官日。" }),
+    button(`開始第 ${save.day + 1} 官日`, () => {
+      if (!advanceDay(save, save.day)) return;
+      persist();
+      showNotice(`已進入第 ${save.day} 官日。`);
+      render();
+    }, "primary-button"),
+  ]);
+}
+
 function renderHome() {
   const wrapper = el("section");
   const completed = SEGMENT_IDS.filter((id) => segmentIsDone(id)).length;
@@ -140,7 +154,7 @@ function renderHome() {
   ]);
   wrapper.append(metrics);
 
-  wrapper.append(titleBlock("本日官務", "三段完成後官日順延；任何一段都可重溫。"));
+  wrapper.append(titleBlock("本日官務", "三段完成後可重溫本日，再由按鈕進入下一官日。"));
   const progress = el("div", { className: "daily-progress" });
   for (const id of SEGMENT_IDS) {
     const done = segmentIsDone(id);
@@ -152,6 +166,8 @@ function renderHome() {
   }
   wrapper.append(progress);
   wrapper.append(el("p", { className: "eyebrow", text: `今日進度 ${completed}／3 段` }));
+  const dayCard = renderDayCompleteCard();
+  if (dayCard) wrapper.append(dayCard);
 
   wrapper.append(titleBlock("縣境小圖", "目前開放兩處地點；新地點預留資料欄位，尚未加入。"));
   const map = el("div", { className: "map-grid", attrs: { "aria-label": "縣境小地圖" } });
@@ -198,7 +214,7 @@ function renderLedger() {
 
 function renderMorning() {
   const wrapper = el("section");
-  wrapper.append(titleBlock(`第 ${save.day} 官日・晨課`, "每日本科至少三題；變式數字由固定種子產生，可重現。"));
+  wrapper.append(titleBlock(`第 ${save.day} 官日・晨課`, "每日晨課至少三題；變式數字由固定種子產生，可重現。"));
   const questions = buildMorningQuestions(save, problems);
   const lesson = questions.find((question) => question.kind === "lesson-original");
   if (lesson) wrapper.append(renderLessonScroll(lesson.techniqueId, lesson.problem));
@@ -214,12 +230,14 @@ function renderMorning() {
   } else {
     wrapper.append(el("p", { className: "eyebrow", text: `已完成 ${questions.filter((question) => isWorkComplete(save, question.id)).length}／${questions.length} 題` }));
   }
+  const dayCard = renderDayCompleteCard();
+  if (dayCard) wrapper.append(dayCard);
   main.replaceChildren(wrapper);
 }
 
 function renderLessonScroll(techniqueId, problem) {
   const technique = techniqueFor(techniqueId);
-  const params = formatParameters(techniqueId, problem.parameters);
+  const params = formatParameters(techniqueId, problem.parameters, problem.presentation);
   return el("article", { className: "lesson-card" }, [
     el("p", { className: "eyebrow", text: "新術教學・讀簡" }),
     el("h3", { text: technique.name }),
@@ -245,9 +263,9 @@ function renderAreaQuestion(question, mode, number) {
     el("div", {}, [el("h3", { text: title }), el("p", { className: "eyebrow", text: `${tag}${question.problem ? `・原題 ${question.problem.number}` : ""}` })]),
     el("span", { className: "question-tag", text: mode === "field" ? "丈田" : question.kind === "review" ? "到期複習" : question.kind === "lesson-variant" ? "新術變式" : "新術試題" }),
   ]));
-  card.append(el("p", { className: "problem-params", text: formatParameters(question.techniqueId, question.parameters) }));
+  card.append(el("p", { className: "problem-params", text: formatParameters(question.techniqueId, question.parameters, question.problem?.presentation) }));
 
-  const svg = drawPlot(question.techniqueId, question.parameters, `第 ${number} 題田形圖`);
+  const svg = drawPlot(question.techniqueId, question.parameters, `第 ${number} 題田形圖`, question.problem?.presentation);
   card.append(svg);
   if (solved) {
     card.append(el("p", { className: "feedback good", text: mode === "field" ? "朱砂印已蓋，已登記入地籍冊。" : "已記錄，可隨時重溫本題。" }));
@@ -270,11 +288,15 @@ function renderAreaQuestion(question, mode, number) {
     }
     const correct = sameValue(answer, question.expectedSquareBu);
     if (!correct) {
+      if (mode === "morning" && question.kind === "review" && !isWorkComplete(save, question.id)) {
+        markReviewAdjustment(save, question.id);
+        persist();
+      }
       showNotice(feedbackPhrases[Math.floor(Math.random() * feedbackPhrases.length)]);
       return;
     }
     const firstCompletion = !isWorkComplete(save, question.id);
-    const hintCount = hintDepth.get(question.id) ?? 0;
+    const hintCount = save.hintDepth[question.id] ?? 0;
     const starQuestionId = question.problem?.id ?? question.id;
     recordStars(save, starQuestionId, Math.max(CONFIG.starRules.minimumStars, CONFIG.starRules.startingStars - hintCount));
     completeWork(save, question.id);
@@ -282,8 +304,8 @@ function renderAreaQuestion(question, mode, number) {
     if (mode === "morning" && question.kind === "lesson-original" && firstCompletion) {
       markSeal(save, question.techniqueId, "learned");
       scheduleReview(save, question.techniqueId, true, save.day);
-    } else if (mode === "morning" && question.kind === "review" && firstCompletion && save.review[question.techniqueId].dueDay <= save.day) {
-      scheduleReview(save, question.techniqueId, true, save.day);
+    } else if (mode === "morning" && question.kind === "review" && firstCompletion) {
+      settleReviewSession(save, save.day, question.techniqueId);
     }
     if (mode === "field" && firstCompletion) {
       recordPlot(save, {
@@ -298,6 +320,7 @@ function renderAreaQuestion(question, mode, number) {
     render();
   } }, [
     answerFields.wrapper,
+    answerFields.tools,
     hint,
     el("div", { className: "form-actions" }, [
       el("button", { className: "primary-button", text: "核算答案", attrs: { type: "submit" } }),
@@ -313,18 +336,35 @@ function areaInputs(prefix) {
   const result = {};
   const fields = [["qing", "頃"], ["mu", "畝"], ["bu", "平方步"]];
   for (const [key, label] of fields) {
-    const input = el("input", { attrs: { id: `${prefix}-${key}`, name: key, type: "text", inputmode: "decimal", autocomplete: "off", "aria-label": label, placeholder: "可留空" } });
+    const input = el("input", { attrs: { id: `${prefix}-${key}`, name: key, type: "text", inputmode: "text", autocomplete: "off", "aria-label": label, placeholder: "可留空" } });
     result[key] = input;
     wrapper.append(el("div", { className: "answer-field" }, [el("label", { text: label, attrs: { for: input.id } }), input]));
   }
   result.wrapper = wrapper;
+  result.tools = fractionInputTools(fields.map(([key]) => result[key]));
   return result;
+}
+
+function fractionInputTools(inputs) {
+  let activeInput = inputs[0] ?? null;
+  for (const input of inputs) input.addEventListener("focus", () => { activeInput = input; });
+  const insert = (value) => {
+    if (!activeInput) return;
+    const start = activeInput.selectionStart ?? activeInput.value.length;
+    const end = activeInput.selectionEnd ?? start;
+    activeInput.setRangeText(value, start, end, "end");
+    activeInput.focus({ preventScroll: true });
+  };
+  return el("div", { className: "fraction-tools", attrs: { "aria-label": "分數輸入工具" } }, [
+    button("插入分數線 /", () => insert("/")),
+    button("插入空格", () => insert(" ")),
+  ]);
 }
 
 function renderHint(question) {
   const key = question.id;
-  const currentDepth = hintDepth.get(key) ?? 0;
-  const box = el("div", { className: "hint-box", attrs: { "aria-live": "polite" } });
+  const currentDepth = save.hintDepth[key] ?? 0;
+  const box = el("div", { className: "hint-box", attrs: { "aria-live": "polite", tabindex: "-1" } });
   const technique = techniqueFor(question.techniqueId);
   const example = technique.hintExample;
   if (currentDepth > 0) {
@@ -339,8 +379,11 @@ function renderHint(question) {
   const nextDepth = currentDepth + 1;
   if (nextDepth <= 3) {
     box.append(button(`提示 ${nextDepth}／3`, () => {
-      hintDepth.set(key, nextDepth);
-      render();
+      save.hintDepth[key] = nextDepth;
+      persist();
+      const updated = renderHint(question);
+      box.replaceWith(updated);
+      (updated.querySelector("button") ?? updated).focus();
     }));
   } else {
     box.append(el("span", { className: "eyebrow", text: "提示已全部展開" }));
@@ -348,12 +391,12 @@ function renderHint(question) {
   return box;
 }
 
-function drawPlot(techniqueId, parameters, label) {
+function drawPlot(techniqueId, parameters, label, presentation = "") {
   const namespace = "http://www.w3.org/2000/svg";
   const svg = document.createElementNS(namespace, "svg");
   svg.setAttribute("viewBox", "0 0 300 190");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", label);
+  svg.setAttribute("aria-label", `${label}・${formatParameters(techniqueId, parameters, presentation)}`);
   svg.classList.add("plot-svg");
   const addSvg = (name, attrs, text = "") => {
     const item = document.createElementNS(namespace, name);
@@ -400,10 +443,11 @@ function drawPlot(techniqueId, parameters, label) {
     const topLeft = techniqueId === "xietian" ? left : left + (width - topWidth) / 2;
     const bottomLeft = techniqueId === "xietian" ? left : left + (width - bottomWidth) / 2;
     addSvg("polygon", { points: `${topLeft},${top} ${topLeft + topWidth},${top} ${bottomLeft + bottomWidth},${top + height} ${bottomLeft},${top + height}`, class: "plot-shape" });
-    const firstName = techniqueId === "xietian" ? "頭廣" : "舌廣";
-    const secondName = techniqueId === "xietian" ? "另一頭" : "踵廣";
+    const firstName = techniqueId === "xietian" ? (presentation === "height-first" ? "第一畔從" : "頭廣") : "舌廣";
+    const secondName = techniqueId === "xietian" ? (presentation === "height-first" ? "第二畔從" : "另一頭") : "踵廣";
+    const perpendicular = presentation === "height-first" ? "正廣" : "正從";
     textLabel(150, top - 6, `${firstName} ${wide[0]} 步`);
-    textLabel(150, top + height + 22, `${secondName} ${wide[1]} 步・正從 ${parameters.height} 步`);
+    textLabel(150, top + height + 22, `${secondName} ${wide[1]} 步・${perpendicular} ${parameters.height} 步`);
   }
   return svg;
 }
@@ -439,6 +483,8 @@ function renderField() {
   } else {
     wrapper.append(el("p", { className: "eyebrow", text: `已登記 ${tasks.filter((task) => isWorkComplete(save, task.id)).length}／${tasks.length} 塊田` }));
   }
+  const dayCard = renderDayCompleteCard();
+  if (dayCard) wrapper.append(dayCard);
   main.replaceChildren(wrapper);
 }
 
@@ -466,6 +512,8 @@ function renderEvening() {
     persist();
     wrapper.append(el("p", { className: "notice", text: "本案已記錄，民望只增不減；你可重溫此案。", attrs: { role: "status" } }));
   }
+  const dayCard = renderDayCompleteCard();
+  if (dayCard) wrapper.append(dayCard);
   main.replaceChildren(wrapper);
 }
 
@@ -504,8 +552,9 @@ function renderCaseCard(caseItem) {
     caseItem.choices.forEach((choice) => choices.append(button(`${choice}面積較大`, () => finishCase(caseItem, choice), "choice-button")));
     card.append(choices);
   } else {
-    const field = el("input", { attrs: { id: `case-answer-${caseItem.id}`, type: "text", inputmode: "decimal", autocomplete: "off", "aria-label": `輸入${caseItem.unit}` } });
+    const field = el("input", { attrs: { id: `case-answer-${caseItem.id}`, type: "text", inputmode: "text", autocomplete: "off", "aria-label": `輸入${caseItem.unit}` } });
     const single = el("div", { className: "answer-grid single" }, [el("div", { className: "answer-field" }, [el("label", { text: caseItem.unit, attrs: { for: field.id } }), field])]);
+    const fractionTools = fractionInputTools([field]);
     card.append(el("p", { className: "eyebrow", text: caseItem.answerHint }));
     card.append(el("form", { onSubmit: (event) => {
       event.preventDefault();
@@ -515,7 +564,7 @@ function renderCaseCard(caseItem) {
         return;
       }
       finishCase(caseItem, answer);
-    } }, [single, el("button", { className: "primary-button", text: "呈交核算", attrs: { type: "submit" } })]));
+    } }, [single, fractionTools, el("button", { className: "primary-button", text: "呈交核算", attrs: { type: "submit" } })]));
   }
   return card;
 }
@@ -523,8 +572,8 @@ function renderCaseCard(caseItem) {
 function caseMeasurement(label, item) {
   const panel = el("article", { className: "paper-card" }, [
     el("h4", { text: label }),
-    el("p", { className: "problem-params", text: formatParameters(item.techniqueId, item.parameters) }),
-    drawPlot(item.techniqueId, item.parameters, `${label}田形圖`),
+    el("p", { className: "problem-params", text: formatParameters(item.techniqueId, item.parameters, item.presentation) }),
+    drawPlot(item.techniqueId, item.parameters, `${label}田形圖`, item.presentation),
   ]);
   return panel;
 }
@@ -576,7 +625,7 @@ function renderCatalogEntry(technique) {
   const fields = el("div", { className: "entry-fields" });
   if (seal.seen) {
     const first = problemFor(technique.problemIds[0]);
-    fields.append(entryField("見聞・第一題原題", first ? `第 ${first.number} 題：${formatParameters(technique.id, first.parameters)}` : "原題待教師核對"));
+    fields.append(entryField("見聞・第一題原題", first ? `第 ${first.number} 題：${formatParameters(technique.id, first.parameters, first.presentation)}` : "原題待教師核對"));
     fields.append(entryField("原文", technique.originalText || "原文待教師核對"));
     fields.append(entryField("題旨", technique.topic || "題旨待教師核對"));
   } else {
@@ -641,8 +690,8 @@ function renderMasteryChallenge(technique, problem) {
   const card = el("article", { className: "question-card", attrs: { id: `mastery-card-${technique.id}` } }, [
     el("p", { className: "eyebrow", text: "通曉・不用提示" }),
     el("h4", { text: `${technique.name}・原題第 ${problem.number} 題` }),
-    el("p", { className: "problem-params", text: formatParameters(technique.id, problem.parameters) }),
-    drawPlot(technique.id, problem.parameters, `${technique.name}通曉題田形圖`),
+    el("p", { className: "problem-params", text: formatParameters(technique.id, problem.parameters, problem.presentation) }),
+    drawPlot(technique.id, problem.parameters, `${technique.name}通曉題田形圖`, problem.presentation),
   ]);
   if (save.seals[technique.id].understood && !redoIds.has(challengeId)) {
     card.append(el("p", { className: "feedback good", text: "通曉印信已記錄，可隨時再做。" }));
@@ -669,7 +718,7 @@ function renderMasteryChallenge(technique, problem) {
     persist();
     showNotice("通曉印信已記錄。");
     render();
-  } }, [fields.wrapper, el("button", { className: "primary-button", text: "呈交原題", attrs: { type: "submit" } })]));
+  } }, [fields.wrapper, fields.tools, el("button", { className: "primary-button", text: "呈交原題", attrs: { type: "submit" } })]));
   return card;
 }
 

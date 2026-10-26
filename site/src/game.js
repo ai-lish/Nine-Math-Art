@@ -33,14 +33,21 @@ export function buildMorningQuestions(save, problems) {
   const day = save.day;
   const plan = save.dayPlans[String(day)] ??= { morningTechniqueId: "", fieldTechniqueIds: [], caseTemplateId: "", caseTechniqueId: "" };
   if (plan.morningTasks?.length) {
-    return plan.morningTasks.map((task) => {
+    const restored = plan.morningTasks.map((task) => {
       const problem = task.problemId ? problems.find((item) => item.id === task.problemId) : null;
+      if (task.kind === "lesson-original" && (!problem || problem.kind !== "book" || problem.techniqueId !== task.techniqueId)) return null;
+      if (problem && (problem.kind !== "book" || problem.techniqueId !== task.techniqueId)) return null;
+      const parameters = problem?.parameters ?? task.parameters;
+      const expectedSquareBu = calculateArea(task.techniqueId, parameters);
+      if (!expectedSquareBu) return null;
       return {
         ...task,
-        ...(problem ? { problem, parameters: problem.parameters } : {}),
-        expectedSquareBu: calculateArea(task.techniqueId, problem?.parameters ?? task.parameters),
+        ...(problem ? { problem, parameters } : {}),
+        expectedSquareBu,
       };
-    }).filter((task) => task.expectedSquareBu);
+    });
+    if (restored.length >= CONFIG.dailyLessonQuestionCount && restored.length <= CONFIG.dailyLessonQuestionMaximum && restored.every(Boolean)) return restored;
+    plan.morningTasks = [];
   }
   const newTechnique = TECHNIQUE_IDS.find((id) => !save.seals[id].learned) ?? "";
   const dueTechniques = TECHNIQUE_IDS.filter((id) => save.seals[id].learned && save.review[id].dueDay > 0 && save.review[id].dueDay <= day);
@@ -95,10 +102,12 @@ export function buildFieldTasks(save, problems, mapData) {
   if (!save.unlockedPlaces.includes("field")) return [];
   const plan = save.dayPlans[String(save.day)] ??= { morningTechniqueId: "", fieldTechniqueIds: [], caseTemplateId: "", caseTechniqueId: "" };
   if (plan.fieldTasks?.length) {
-    return plan.fieldTasks.map((task) => ({
+    const restored = plan.fieldTasks.map((task) => ({
       ...task,
       expectedSquareBu: calculateArea(task.techniqueId, task.parameters),
-    })).filter((task) => task.expectedSquareBu);
+    }));
+    if (restored.length === CONFIG.dailyFieldCount && restored.every((task) => task.expectedSquareBu)) return restored;
+    plan.fieldTasks = [];
   }
   const available = getAvailableFieldTechniques(save, mapData);
   if (!available.length) return [];
@@ -204,10 +213,11 @@ export function buildEveningCase(save, problems, templates) {
   };
 }
 
-export function formatParameters(techniqueId, parameters) {
+export function formatParameters(techniqueId, parameters, presentation = "") {
   if (techniqueId === "fangtian") return `廣 ${parameters.width} 步，從 ${parameters.length} 步`;
   if (techniqueId === "litian") return `廣 ${parameters.width} 里，從 ${parameters.length} 里`;
   if (techniqueId === "guitian") return `廣 ${parameters.width} 步，正從 ${parameters.height} 步`;
+  if (techniqueId === "xietian" && presentation === "height-first") return `正廣 ${parameters.height} 步，兩畔從 ${parameters.endA} 與 ${parameters.endB} 步`;
   if (techniqueId === "xietian") return `兩頭廣 ${parameters.endA}、${parameters.endB} 步，正從 ${parameters.height} 步`;
   if (techniqueId === "jitian") return `舌廣 ${parameters.tongue} 步，踵廣 ${parameters.heel} 步，正從 ${parameters.height} 步`;
   return "尺寸待核對";

@@ -1,4 +1,5 @@
 import { CONFIG, SEGMENT_IDS, TECHNIQUE_IDS } from "./config.js";
+import { hasValidParameters } from "./math.js";
 
 export function createDefaultSave() {
   const seals = {};
@@ -15,7 +16,9 @@ export function createDefaultSave() {
     reputation: 0,
     seals,
     stars: {},
+    hintDepth: {},
     review,
+    reviewAdjustedIds: [],
     segments: { "1": { morning: false, noon: false, evening: false } },
     dayPlans: {},
     completedWorkIds: [],
@@ -43,20 +46,24 @@ function safeIdList(value, maximum = 10000) {
 }
 
 function safeTaskList(value, allowedKinds) {
-  if (!Array.isArray(value)) return [];
+  if (!Array.isArray(value) || value.length > 5) return [];
   const parameterKeys = ["width", "length", "height", "endA", "endB", "tongue", "heel"];
-  return value.slice(0, 5).map((task) => {
+  const tasks = value.map((task) => {
     const item = asPlainObject(task);
     const parameters = asPlainObject(item.parameters);
+    const techniqueId = TECHNIQUE_IDS.includes(item.techniqueId) ? item.techniqueId : "";
     return {
       id: safeString(item.id, 240),
       kind: allowedKinds.includes(item.kind) ? item.kind : "",
-      techniqueId: TECHNIQUE_IDS.includes(item.techniqueId) ? item.techniqueId : "",
+      techniqueId,
       problemId: safeString(item.problemId, 100),
       slot: Math.min(5, safePositiveInteger(item.slot)),
       parameters: Object.fromEntries(parameterKeys.filter((key) => typeof parameters[key] === "string" && parameters[key].length <= 32).map((key) => [key, parameters[key]])),
     };
-  }).filter((task) => task.id && task.kind && task.techniqueId && Object.keys(task.parameters).length > 0);
+  });
+  if (tasks.some((task) => !task.id || !task.kind || !task.techniqueId || !hasValidParameters(task.techniqueId, task.parameters))) return [];
+  if (new Set(tasks.map((task) => task.id)).size !== tasks.length) return [];
+  return tasks;
 }
 
 export function normalizeSave(raw) {
@@ -90,6 +97,11 @@ export function normalizeSave(raw) {
     const score = safePositiveInteger(value);
     if (id.length <= 240 && score >= 1 && score <= 3) save.stars[id] = score;
   }
+  const hintDepth = asPlainObject(raw.hintDepth);
+  for (const [id, value] of Object.entries(hintDepth).slice(0, 10000)) {
+    const level = safePositiveInteger(value, -1);
+    if (id.length <= 240 && level >= 1 && level <= 3) save.hintDepth[id] = level;
+  }
   const segments = asPlainObject(raw.segments);
   for (const [dayText, dayState] of Object.entries(segments).slice(0, 10000)) {
     if (!/^\d{1,8}$/.test(dayText)) continue;
@@ -110,6 +122,7 @@ export function normalizeSave(raw) {
     };
   }
   save.completedWorkIds = safeIdList(raw.completedWorkIds);
+  save.reviewAdjustedIds = safeIdList(raw.reviewAdjustedIds);
   save.resolvedCaseIds = safeIdList(raw.resolvedCaseIds);
   save.unlockedPlaces = safeIdList(raw.unlockedPlaces, 100).filter((id) => /^[a-z0-9][a-z0-9-]{0,79}$/.test(id));
   if (!save.unlockedPlaces.includes("county-office")) save.unlockedPlaces.push("county-office");
@@ -158,6 +171,35 @@ export function scheduleReview(save, techniqueId, wasCorrect, day = save.day) {
   return save;
 }
 
+export function markReviewAdjustment(save, workId) {
+  const id = safeString(workId, 240);
+  if (id && !save.reviewAdjustedIds.includes(id)) save.reviewAdjustedIds.push(id);
+  return save;
+}
+
+export function hadReviewAdjustment(save, workId) {
+  return save.reviewAdjustedIds.includes(workId);
+}
+
+export function clearReviewAdjustment(save, workId) {
+  save.reviewAdjustedIds = save.reviewAdjustedIds.filter((id) => id !== workId);
+  return save;
+}
+
+export function settleReviewSession(save, day, techniqueId) {
+  if (!TECHNIQUE_IDS.includes(techniqueId)) return false;
+  const review = save.review[techniqueId];
+  if (!review || review.dueDay <= 0 || review.dueDay > day) return false;
+  const tasks = save.dayPlans[String(day)]?.morningTasks?.filter((task) =>
+    task.kind === "review" && task.techniqueId === techniqueId,
+  ) ?? [];
+  if (!tasks.length || !tasks.every((task) => isWorkComplete(save, task.id))) return false;
+  const hadAdjustment = tasks.some((task) => hadReviewAdjustment(save, task.id));
+  scheduleReview(save, techniqueId, !hadAdjustment, day);
+  for (const task of tasks) clearReviewAdjustment(save, task.id);
+  return true;
+}
+
 export function recordPlot(save, entry) {
   if (!entry?.id || save.landLedger.some((existing) => existing.id === entry.id)) return save;
   if (!TECHNIQUE_IDS.includes(entry.techniqueId) || !entry.area) return save;
@@ -189,12 +231,19 @@ export function completeSegment(save, day, segmentId, newlyUnlockedPlaces = []) 
       if (/^[a-z0-9][a-z0-9-]{0,79}$/.test(placeId) && !save.unlockedPlaces.includes(placeId)) save.unlockedPlaces.push(placeId);
     }
   }
-  if (SEGMENT_IDS.every((id) => save.segments[key][id])) {
-    save.day = Math.max(save.day, Number(key) + 1);
-    const nextKey = String(save.day);
-    if (!save.segments[nextKey]) save.segments[nextKey] = { morning: false, noon: false, evening: false };
-  }
   return save;
+}
+
+export function isDayComplete(save, day = save.day) {
+  return SEGMENT_IDS.every((id) => save.segments[String(day)]?.[id] === true);
+}
+
+export function advanceDay(save, day = save.day) {
+  if (day !== save.day || !isDayComplete(save, day) || save.day >= Number.MAX_SAFE_INTEGER) return false;
+  save.day += 1;
+  const nextKey = String(save.day);
+  if (!save.segments[nextKey]) save.segments[nextKey] = { morning: false, noon: false, evening: false };
+  return true;
 }
 
 export function encodeSave(save) {
@@ -224,6 +273,7 @@ export function mergeSaves(currentInput, incomingInput) {
   merged.resolvedCaseIds = [...new Set([...current.resolvedCaseIds, ...incoming.resolvedCaseIds])];
   merged.reputation = Math.max(merged.reputation, merged.resolvedCaseIds.length * CONFIG.reputationPerCase);
   merged.completedWorkIds = [...new Set([...current.completedWorkIds, ...incoming.completedWorkIds])];
+  merged.reviewAdjustedIds = [...new Set([...current.reviewAdjustedIds, ...incoming.reviewAdjustedIds])];
   merged.unlockedPlaces = [...new Set([...current.unlockedPlaces, ...incoming.unlockedPlaces])];
   for (const techniqueId of TECHNIQUE_IDS) {
     merged.seals[techniqueId] = {
@@ -239,6 +289,8 @@ export function mergeSaves(currentInput, incomingInput) {
   }
   merged.stars = { ...current.stars };
   for (const [id, score] of Object.entries(incoming.stars)) merged.stars[id] = Math.max(merged.stars[id] ?? 0, score);
+  merged.hintDepth = { ...current.hintDepth };
+  for (const [id, level] of Object.entries(incoming.hintDepth)) merged.hintDepth[id] = Math.max(merged.hintDepth[id] ?? 0, level);
   for (const source of [current, incoming]) {
     for (const [day, status] of Object.entries(source.segments)) {
       if (!merged.segments[day]) merged.segments[day] = { morning: false, noon: false, evening: false };
